@@ -2,7 +2,6 @@ package main
 
 import (
 	"embed"
-	"html/template"
 	"io/fs"
 	"net/http"
 	"strings"
@@ -14,11 +13,8 @@ import (
 	"github.com/spf13/viper"
 )
 
-//go:embed static/*
-var staticFS embed.FS
-
-//go:embed templates/*
-var templateFS embed.FS
+//go:embed www/*
+var wwwFS embed.FS
 
 func main() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
@@ -52,18 +48,16 @@ func main() {
 	r := gin.New()
 	r.SetTrustedProxies(nil)
 
-	rootTemplate := template.New("root").Funcs(r.FuncMap)
-	r.SetHTMLTemplate(template.Must(rootTemplate.ParseFS(templateFS, "templates/*")))
 	r.Use(
 		gin.Recovery(),
 		Logger(),
 	)
-	r.GET("/", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "index.html", nil)
-	})
 
-	staticFiles, _ := fs.Sub(staticFS, "static")
-	r.StaticFS("/static", http.FS(staticFiles))
+	staticFiles, _ := fs.Sub(wwwFS, "www")
+	r.StaticFS("/", http.FS(staticFiles))
+	r.NoRoute(func(c *gin.Context) {
+		c.FileFromFS("404.html", http.FS(staticFiles))
+	})
 
 	addr := viper.GetString("http.address")
 	log.Info().
