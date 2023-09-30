@@ -13,8 +13,8 @@ import (
 	"github.com/spf13/viper"
 )
 
-//go:embed www/*
-var wwwFS embed.FS
+//go:embed all:nextjs/out
+var nextFS embed.FS
 
 func main() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
@@ -22,8 +22,6 @@ func main() {
 	pflag.String("address", ":8080", "address to which we should bind")
 	viper.BindPFlag("http.address", pflag.Lookup("address"))
 	viper.SetDefault("http.address", ":8080")
-
-	viper.SetDefault("embedded-files", true)
 
 	config := pflag.String("config", "", "path to config file")
 
@@ -41,7 +39,9 @@ func main() {
 	viper.AddConfigPath("$HOME/.muninn")
 	viper.AddConfigPath(".")
 	err := viper.ReadInConfig()
-	if err != nil {
+	switch err.(type) {
+	case viper.ConfigFileNotFoundError:
+	default:
 		panic(err)
 	}
 
@@ -53,10 +53,10 @@ func main() {
 		Logger(),
 	)
 
-	staticFiles, _ := fs.Sub(wwwFS, "www")
-	r.StaticFS("/", http.FS(staticFiles))
+	outFS, _ := fs.Sub(nextFS, "nextjs/out")
+	r.StaticFS("/", http.FS(outFS))
 	r.NoRoute(func(c *gin.Context) {
-		c.FileFromFS("404.html", http.FS(staticFiles))
+		c.FileFromFS("404.html", http.FS(outFS))
 	})
 
 	addr := viper.GetString("http.address")
