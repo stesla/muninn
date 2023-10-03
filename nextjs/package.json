@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "export": "rm -rf .next dist && EXPORT=1 next build",
+    "export_windows": "set EXPORT=1 && rm -rf .next dist && next build"
   },
   "dependencies": {
     "react": "latest",
