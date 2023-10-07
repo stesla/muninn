@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"embed"
 	"encoding/json"
+	"io"
 	"io/fs"
 	"net/http"
 	"strings"
@@ -13,6 +15,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
+	"github.com/stesla/telnet"
 )
 
 //go:embed all:nextjs/dist
@@ -52,7 +55,7 @@ func main() {
 	}
 
 	api := httprouter.New()
-	api.GET("/connect", connect)
+	api.GET("/connect/:address", connect)
 	api.GET("/ping", httprouter.Handle(func(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		pong := map[string]string{"ping": "pong"}
 		json.NewEncoder(w).Encode(&pong)
@@ -75,24 +78,70 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
+type message struct {
+	messageType int
+	data        []byte
+}
+
 func connect(w http.ResponseWriter, r *http.Request, params httprouter.Params) {
+	address := params.ByName("address")
+	upstream, err := telnet.Dial(address)
+	if err != nil {
+		log.Warn().Str("address", address).Err(err).Msg("error connecting to address")
+		http.Error(w, "error connecting to address", http.StatusBadGateway)
+		return
+	}
+	defer upstream.Close()
+
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Warn().Err(err).Msg("upgrade")
 		return
 	}
 	defer c.Close()
+
+	closech := make(chan struct{})
+	defer close(closech)
+
+	errch := make(chan error, 1)
+
+	go func(r io.Reader, downstream *websocket.Conn) {
+		scanner := bufio.NewScanner(r)
+		for {
+			select {
+			case <-closech:
+				return
+			default:
+			}
+			if scanner.Scan() {
+				downstream.WriteMessage(websocket.TextMessage, scanner.Bytes())
+				log.Debug().Str("bytes", string(scanner.Bytes())).Msg("sent")
+			} else if err := scanner.Err(); err != nil {
+				log.Warn().Err(err).Msg("read upstream")
+				errch <- err
+				return
+			}
+		}
+	}(upstream, c)
+
 	for {
 		mt, message, err := c.ReadMessage()
 		if err != nil {
-			log.Warn().Err(err).Msg("read")
-			break
+			log.Warn().Err(err).Msg("read downstream")
+			return
 		}
-		log.Debug().Str("bytes", string(message)).Msg("recieved")
-		err = c.WriteMessage(mt, append([]byte("ECHO: "), message...))
-		if err != nil {
-			log.Warn().Err(err).Msg("write")
-			break
+		log.Debug().
+			Int("type", mt).
+			Str("bytes", string(message)).
+			Msg("recieved message")
+		switch mt {
+		case websocket.TextMessage:
+			_, err = upstream.Write(append(message, '\n'))
+			if err != nil {
+				log.Warn().Err(err).Msg("write upstream")
+				return
+			}
+		default:
 		}
 	}
 }

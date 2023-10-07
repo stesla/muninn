@@ -18,28 +18,34 @@ function classNames(...classes) {
 
 export default function Muninn() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [messageHistory, setMessageHistory] = useState([]);
-  const messageRef = useRef();
-  const ws = useRef();
+  const [messageHistory, setMessageHistory] = useState([])
+  const messageRef = useRef()
+  const messageEndRef = useRef()
+  const serverAddrRef = useRef()
+  const ws = useRef()
 
-  useEffect(() => {
-    if (ws.current) {
-      return
-    }
+  const scrollToBottom = () => {
+    messageEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }
+
+  const handleConnect = useCallback((event) => {
+    event.preventDefault()
     var url = new URL(window.location.href)
     url.protocol = 'ws:'
-    url.pathname = '/api/connect'
+    url.pathname = '/api/connect/' + serverAddrRef.current.value
     ws.current = new WebSocket(url);
     ws.current.addEventListener("error", (event) => {
       console.log(event);
     })
     ws.current.addEventListener("open", (event) => {
       setMessageHistory((prev) => prev.concat("Connected!"))
+      scrollToBottom()
     })
     ws.current.addEventListener("message", (event) => {
       setMessageHistory((prev) => prev.concat(event.data))
+      scrollToBottom()
     })
-  }, [])
+  })
 
   const handleSendInput = useCallback((event) => {
     event.preventDefault()
@@ -200,8 +206,13 @@ export default function Muninn() {
         <div className="h-full xl:pr-96">
           <div className="flex flex-col h-full px-4 py-10 sm:px-6 lg:px-8 lg:py-6">
             {/* Main area */}
-            <div className="p-4 h-full border border-black rounded-md whitespace-pre-wrap break-words font-mono bg-black text-white">
-            { messageHistory.join("\n") }
+            <form className="mb-2 flex" onSubmit={handleConnect}>
+              <input className="pl-2 py-1 w-full border border-black rounded-md" type="text" ref={serverAddrRef}></input>
+              <button className="ml-2 py-1 px-4 border border-black rounded-md" type="submit">Connect</button>
+            </form>
+            <div className="p-4 h-full border border-black rounded-md whitespace-pre-wrap break-words font-mono bg-black text-white overflow-y-auto">
+              { messageHistory.join("\n") }
+              <div style={{ float: "left", clear: "both" }} ref={messageEndRef}></div>
             </div>
             <form className="mt-2 flex" onSubmit={handleSendInput}>
               <input className="pl-2 py-1 w-full border border-black rounded-md" type="text" default="Type in text, hit Send" ref={messageRef}></input>
